@@ -4,7 +4,7 @@ from django.contrib.admin import ModelAdmin
 from django.contrib.admin.utils import lookup_field, display_for_value, display_for_field, label_for_field
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
-from django.http import JsonResponse
+from django.http import JsonResponse, Http404, HttpResponseNotAllowed
 from django.urls import path
 from django.utils.safestring import mark_safe
 from django.views import View
@@ -69,6 +69,11 @@ def view_wrapper(model, admin_cls, file_type):
 
     class ExportView(View):
         def get(self, request):
+            app_label = model._meta.app_label
+
+            if not request.user.has_module_perms(app_label):
+                return HttpResponseNotAllowed
+
             model_admin = admin_cls(model, admin.site)
             cl = model_admin.get_changelist_instance(request)
             cl.formset = None
@@ -76,7 +81,7 @@ def view_wrapper(model, admin_cls, file_type):
             headers = result_headers(cl)
             results = [items_for_result(cl, item) for item in cl.result_list]
 
-            file_name = '{}_{}_list'.format(model._meta.app_label, model._meta.object_name)
+            file_name = '{}_{}_list'.format(app_label, model._meta.object_name)
             exporter_cls = getExporter(file_type)
             exporter = exporter_cls(file_name, headers, results)
             return exporter.export()
@@ -84,6 +89,7 @@ def view_wrapper(model, admin_cls, file_type):
     return ExportView
 
 
+# ModelAdmin class decorator with parameter Model Class and output file type
 def dae_export(model_cls, file_type='xls'):
     def outer(admin_cls):
         # do url register
